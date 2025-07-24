@@ -1,1 +1,1 @@
-vim.api.nvim_create_user_command("Neojira", require("neojira").run, {})
+-- vim.api.nvim_create_user_command("Neojira", require("neojira").run, {})

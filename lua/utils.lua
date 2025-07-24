@@ -40,7 +40,7 @@ end
 M.get_text = function(buffer)
     --gets all text from buffer
     local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
-    return lines;
+    return table.concat(lines, "\n")
 end
 
 return M
