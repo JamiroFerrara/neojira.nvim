@@ -1,5 +1,5 @@
 local M = {}
-local U = require("utils")
+local U = require("./utils")
 
 M.selected_key = ""
 
