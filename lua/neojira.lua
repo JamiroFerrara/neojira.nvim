@@ -32,6 +32,20 @@ M.get_all_tasks = function(buf)
 	U.nmap("<leader>q", M.close, buf)
 	U.nmap("m", M.issue_move, buf)
 	U.nmap("c", M.issue_comment, buf)
+	U.nmap("o", M.issue_open_url, buf)
+end
+
+M.issue_open_url = function()
+	if M.selected_key == "" then
+		local line = vim.api.nvim_get_current_line()
+		M.selected_key = line:match("(%u%u%u%-%d+)")
+	end
+
+	if M.selected_key and M.selected_key ~= "" then
+		vim.fn.system("jira issue browse " .. M.selected_key)
+	else
+		vim.notify("No valid task key found in the line.", 1)
+	end
 end
 
 M.issue_comment = function()
@@ -48,6 +62,11 @@ M.issue_comment = function()
 end
 
 M.issue_move = function()
+	if M.selected_key == "" then
+		local line = vim.api.nvim_get_current_line()
+		M.selected_key = line:match("(%u%u%u%-%d+)")
+	end
+
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
 	if key then
