@@ -4,6 +4,8 @@ local U = require("utils")
 M.username = "Jamiro Ferrara"
 M.selected_key = ""
 
+M.buf_tasks = U.new_scratch()
+
 M.setup = function(config)
 	M.username = config.username or M.username
 	-- Set up any necessary configurations or initializations here
@@ -11,7 +13,6 @@ M.setup = function(config)
 end
 
 M.run = function()
-	M.buf_tasks = U.new_scratch()
 	M.get_all_tasks()
 end
 
