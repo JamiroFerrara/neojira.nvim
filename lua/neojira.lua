@@ -2,10 +2,14 @@ local M = {}
 local U = require("utils")
 
 M.username = "Jamiro Ferrara"
+M.browser = "chrome.exe"
+M.company_name = "novigo"
 M.selected_key = ""
 
 M.setup = function(config)
 	M.username = config.username or M.username
+	M.browser = config.browser or M.browser
+	M.company_name = config.company_name or M.company_name
 	-- Set up any necessary configurations or initializations here
 	-- This function can be used to set up key mappings, autocommands, etc.
 end
@@ -42,7 +46,7 @@ M.issue_open_url = function()
 	end
 
 	if M.selected_key and M.selected_key ~= "" then
-		vim.fn.system("jira issue browse " .. M.selected_key)
+		vim.fn.system(M.browser .. " https://" .. M.company_name .. ".atlassian.net/browse/" .. M.selected_key)
 	else
 		vim.notify("No valid task key found in the line.", 1)
 	end
