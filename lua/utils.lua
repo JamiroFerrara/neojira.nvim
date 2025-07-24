@@ -37,4 +37,10 @@ M.put_text = function(buffer, text)
     vim.api.nvim_buf_set_lines(buffer, 0, -1, false, vim.split(text, "\n"))
 end
 
+M.get_text = function(buffer)
+    --gets all text from buffer
+    local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+    return lines;
+end
+
 return M
