@@ -2,6 +2,7 @@ local M = {}
 local U = require("./utils")
 
 M.selected_key = ""
+M.task_list = ""
 
 M.setup = function(config)
 	M.username = config.username
@@ -74,6 +75,8 @@ M.issue_move = function()
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
 	if key then
+		U.split(true)
+		U.new_scratch()
 		vim.cmd("terminal jira issue move " .. key)
 	else
 		vim.notify("No valid task key found in the line. 💔", 1)
@@ -85,7 +88,7 @@ M.open_cached_list = function()
 	if M.task_list ~= nil then
 		U.put_text(M.buf_tasks, M.task_list)
 	else
-		M.get_all_tasks(M.buf_tasks)
+		M.get_all_tasks()
 	end
 end
 
