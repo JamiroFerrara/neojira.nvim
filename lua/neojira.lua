@@ -63,6 +63,7 @@ M.issue_comment = function()
 	vim.api.nvim_command("startinsert")
 	U.nmap("<cr>", function()
 		vim.cmd("terminal jira issue comment add " .. M.selected_key .. " '" .. U.get_text(comment_buf) .. "'")
+		vim.cmd("quit")
 	end, comment_buf)
 end
 
@@ -78,6 +79,7 @@ M.issue_move = function()
 		U.split(true)
 		U.new_scratch()
 		vim.cmd("terminal jira issue move " .. key)
+		vim.cmd("quit")
 	else
 		vim.notify("No valid task key found in the line. 💔", 1)
 	end
