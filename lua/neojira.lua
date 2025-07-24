@@ -1,17 +1,12 @@
 local M = {}
 local U = require("utils")
 
-M.username = "Jamiro Ferrara"
-M.browser = "chrome.exe"
-M.company_name = "novigo"
 M.selected_key = ""
 
 M.setup = function(config)
-	M.username = config.username or M.username
-	M.browser = config.browser or M.browser
-	M.company_name = config.company_name or M.company_name
-	-- Set up any necessary configurations or initializations here
-	-- This function can be used to set up key mappings, autocommands, etc.
+	M.username = config.username
+	M.browser = config.browser
+	M.company_name = config.company_name
 end
 
 M.run = function()
