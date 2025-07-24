@@ -30,6 +30,8 @@ M.get_all_tasks = function()
 
 	U.nmap("<cr>", M.open_task, M.buf_tasks)
 	U.nmap("<bs>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<C-o>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<M-o>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<leader>q", M.close, M.buf_tasks)
 	U.nmap("m", M.issue_move, M.buf_tasks)
 	U.nmap("c", M.issue_comment, M.buf_tasks)
