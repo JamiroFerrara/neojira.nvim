@@ -60,7 +60,7 @@ M.issue_comment = function()
 
 	U.split(true)
 	local comment_buf = U.new_scratch()
-	-- vim.api.nvim_command("startinsert")
+	vim.api.nvim_command("startinsert")
 	U.nmap("<cr>", function()
 		vim.cmd("terminal jira issue comment add " .. M.selected_key .. " '" .. U.get_text(comment_buf) .. "'")
 		vim.cmd("quit")
@@ -75,14 +75,15 @@ M.issue_move = function()
 
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
-	if key then
-		U.split(true)
-		U.new_scratch()
-		vim.cmd("terminal jira issue move " .. key)
-		vim.cmd("quit")
-	else
-		vim.notify("No valid task key found in the line. 💔", 1)
-	end
+	print(key)
+	-- if key then
+	-- 	U.split(true)
+	-- 	U.new_scratch()
+	-- 	vim.cmd("terminal jira issue move " .. key)
+	-- 	vim.cmd("quit")
+	-- else
+	-- 	vim.notify("No valid task key found in the line. 💔", 1)
+	-- end
 end
 
 M.open_cached_list = function()
