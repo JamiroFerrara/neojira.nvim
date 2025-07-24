@@ -34,7 +34,7 @@ M.get_all_tasks = function()
 	U.nmap("<C-o>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<M-o>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<leader>q", M.close, M.buf_tasks)
-	U.nmap("M", M.issue_move, M.buf_tasks)
+	U.nmap("m", M.issue_move, M.buf_tasks)
 	U.nmap("c", M.issue_comment, M.buf_tasks)
 	U.nmap("o", M.issue_open_url, M.buf_tasks)
 end
@@ -104,8 +104,9 @@ end
 M.open_task = function()
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
+	M.selected_key = key
+
 	if key then
-		M.selected_key = key
 		local res = vim.fn.system("jira issue view --plain --comments=10 " .. key)
 		U.put_text(M.buf_tasks, res)
 	else
