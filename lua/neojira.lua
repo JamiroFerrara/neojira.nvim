@@ -38,7 +38,7 @@ M.issue_comment = function()
         M.selected_key = line:match("(%u%u%u%-%d+)")
     end
 
-    vim.cmd("terminal jira issue comment " .. M.selected_key)
+    vim.cmd("terminal jira issue comment add " .. M.selected_key)
 end
 
 M.issue_move = function()
