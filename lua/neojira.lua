@@ -59,6 +59,7 @@ M.issue_comment = function()
 
 	U.split(true)
 	local comment_buf = U.new_scratch()
+	vim.api.nvim_command("startinsert")
 	U.nmap("<cr>", function()
 		vim.cmd("terminal jira issue comment add " .. M.selected_key .. " '" .. U.get_text(comment_buf) .. "'")
 	end, comment_buf)
