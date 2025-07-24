@@ -1,9 +1,11 @@
 local M = {}
 local U = require("utils")
 
-M.username = "Jamiro Ferrara" --TODO: configure me
+M.username = "Jamiro Ferrara"
+M.selected_key = "";
 
-M.setup = function()
+M.setup = function(config)
+    M.username = config.username or M.username
     -- Set up any necessary configurations or initializations here
     -- This function can be used to set up key mappings, autocommands, etc.
 end
@@ -27,6 +29,16 @@ M.get_all_tasks = function(buf)
     U.nmap("<bs>", M.open_cached_list, buf)
     U.nmap("<leader>q", M.close, buf)
     U.nmap("m", M.issue_move, buf)
+    U.nmap("c", M.issue_comment, buf)
+end
+
+M.issue_comment = function()
+    if M.selected_key == "" then
+        local line = vim.api.nvim_get_current_line()
+        M.selected_key = line:match("(%u%u%u%-%d+)")
+    end
+
+    vim.cmd("terminal jira issue comment " .. M.selected_key)
 end
 
 M.issue_move = function()
@@ -40,6 +52,7 @@ M.issue_move = function()
 end
 
 M.open_cached_list = function()
+    M.selected_key = ""
     if M.task_list ~= nil then
         U.put_text(M.buf_tasks, M.task_list)
     else
@@ -58,6 +71,7 @@ M.open_task = function()
     local line = vim.api.nvim_get_current_line()
     local key = line:match("(%u%u%u%-%d+)")
     if key then
+        M.selected_key = key
         local res = vim.fn.system("jira issue view --plain --comments=10 " .. key)
         U.put_text(M.buf_tasks, res)
     else
