@@ -75,15 +75,19 @@ M.issue_move = function()
 
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
-	print(key)
-	-- if key then
-	-- 	U.split(true)
-	-- 	U.new_scratch()
-	-- 	vim.cmd("terminal jira issue move " .. key)
-	-- 	vim.cmd("quit")
-	-- else
-	-- 	vim.notify("No valid task key found in the line. 💔", 1)
-	-- end
+	if key then
+		U.split(true)
+		local move_buf = U.new_scratch()
+		vim.cmd("terminal jira issue move " .. key)
+		vim.api.nvim_create_autocmd("WinClosed", {
+			buffer = move_buf,
+			callback = function()
+				M.get_all_tasks()
+			end,
+		})
+	else
+		vim.notify("No valid task key found in the line. 💔", 1)
+	end
 end
 
 M.open_cached_list = function()
