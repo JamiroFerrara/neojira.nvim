@@ -15,7 +15,9 @@ M.run = function()
 end
 
 M.get_all_tasks = function()
-	U.put_text(M.buf_tasks, "Getting jira tasks..")
+	vim.defer_fn(function()
+		U.put_text(M.buf_tasks, "Getting jira tasks..🔥")
+	end, 100) -- Delay for 100 milliseconds
 
 	vim.defer_fn(function()
 		local jql_query = string.format('assignee = "%s" AND project IS NOT EMPTY AND created >= -50d', M.username)
@@ -43,7 +45,7 @@ M.issue_open_url = function()
 	if M.selected_key and M.selected_key ~= "" then
 		vim.fn.system(M.browser .. " https://" .. M.company_name .. ".atlassian.net/browse/" .. M.selected_key)
 	else
-		vim.notify("No valid task key found in the line.", 1)
+		vim.notify("No valid task key found in the line. 💔", 1)
 	end
 end
 
@@ -71,7 +73,7 @@ M.issue_move = function()
 	if key then
 		vim.cmd("terminal jira issue move " .. key)
 	else
-		vim.notify("No valid task key found in the line.", 1)
+		vim.notify("No valid task key found in the line. 💔", 1)
 	end
 end
 
@@ -99,7 +101,7 @@ M.open_task = function()
 		local res = vim.fn.system("jira issue view --plain --comments=10 " .. key)
 		U.put_text(M.buf_tasks, res)
 	else
-		vim.notify("No valid task key found in the line.", 1)
+		vim.notify("No valid task key found in the line. 💔", 1)
 	end
 end
 
