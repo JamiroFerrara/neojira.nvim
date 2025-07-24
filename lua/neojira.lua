@@ -12,11 +12,11 @@ end
 
 M.run = function()
 	M.buf_tasks = U.new_scratch()
-	M.get_all_tasks(M.buf_tasks)
+	M.get_all_tasks()
 end
 
-M.get_all_tasks = function(buf)
-	U.put_text(buf, "Getting jira tasks..")
+M.get_all_tasks = function()
+	U.put_text(M.buf_tasks, "Getting jira tasks..")
 
 	vim.defer_fn(function()
 		local jql_query = string.format('assignee = "%s" AND project IS NOT EMPTY AND created >= -50d', M.username)
@@ -24,15 +24,15 @@ M.get_all_tasks = function(buf)
 			"jira issue list --plain -s~Chiuso --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
 		)
 		M.task_list = res
-		U.put_text(buf, res)
+		U.put_text(M.buf_tasks, res)
 	end, 200) -- Delay for 100 milliseconds
 
-	U.nmap("<cr>", M.open_task, buf)
-	U.nmap("<bs>", M.open_cached_list, buf)
-	U.nmap("<leader>q", M.close, buf)
-	U.nmap("m", M.issue_move, buf)
-	U.nmap("c", M.issue_comment, buf)
-	U.nmap("o", M.issue_open_url, buf)
+	U.nmap("<cr>", M.open_task, M.buf_tasks)
+	U.nmap("<bs>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<leader>q", M.close, M.buf_tasks)
+	U.nmap("m", M.issue_move, M.buf_tasks)
+	U.nmap("c", M.issue_comment, M.buf_tasks)
+	U.nmap("o", M.issue_open_url, M.buf_tasks)
 end
 
 M.issue_open_url = function()
