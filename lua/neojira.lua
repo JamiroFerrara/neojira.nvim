@@ -95,6 +95,7 @@ M.issue_move = function()
 		U.split(true)
 		local move_buf = U.new_scratch()
 		vim.cmd("terminal jira issue move " .. key)
+		vim.api.nvim_buf_set_name(move_buf, "Jira Move")
 		vim.api.nvim_create_autocmd("WinClosed", {
 			buffer = move_buf,
 			callback = function()
