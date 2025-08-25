@@ -8,6 +8,8 @@ M.setup = function(config)
 	M.username = config.username
 	M.browser = config.browser
 	M.company_name = config.company_name
+
+	vim.api.nvim_create_user_command("Neojira", M.run, {})
 end
 
 M.run = function()
@@ -53,34 +55,34 @@ M.issue_open_url = function()
 end
 
 M.issue_comment = function()
-    if M.selected_key == "" then
-        local line = vim.api.nvim_get_current_line()
-        M.selected_key = line:match("(%u%u%u%-%d+)")
-    end
-    U.split(true)
-    local comment_buf = U.new_scratch()
-    vim.api.nvim_command("startinsert")
-    -- Create a command to submit the comment
-    local function submit_comment()
-        -- Get all lines from the comment buffer
-        local comment_lines = vim.api.nvim_buf_get_lines(comment_buf, 0, -1, false)
-        local comment_text = table.concat(comment_lines, "\n")  -- Join lines with newline
-        -- Create a temporary file to store the comment
-        local temp_file = "/tmp/jira_comment.txt"
-        local file = io.open(temp_file, "w")
-        if file then
-            file:write(comment_text)
-            file:close()
-        else
-            print("Error creating temporary file.")
-            return
-        end
-        -- Execute the command to add the comment using the temporary file
-        vim.cmd("terminal jira issue comment add " .. M.selected_key .. " < " .. temp_file)
-        vim.cmd("quit")
-    end
-    -- Map <CR> to submit the comment
-    U.nmap("<cr>", submit_comment, comment_buf)
+	if M.selected_key == "" then
+		local line = vim.api.nvim_get_current_line()
+		M.selected_key = line:match("(%u%u%u%-%d+)")
+	end
+	U.split(true)
+	local comment_buf = U.new_scratch()
+	vim.api.nvim_command("startinsert")
+	-- Create a command to submit the comment
+	local function submit_comment()
+		-- Get all lines from the comment buffer
+		local comment_lines = vim.api.nvim_buf_get_lines(comment_buf, 0, -1, false)
+		local comment_text = table.concat(comment_lines, "\n") -- Join lines with newline
+		-- Create a temporary file to store the comment
+		local temp_file = "/tmp/jira_comment.txt"
+		local file = io.open(temp_file, "w")
+		if file then
+			file:write(comment_text)
+			file:close()
+		else
+			print("Error creating temporary file.")
+			return
+		end
+		-- Execute the command to add the comment using the temporary file
+		vim.cmd("terminal jira issue comment add " .. M.selected_key .. " < " .. temp_file)
+		vim.cmd("quit")
+	end
+	-- Map <CR> to submit the comment
+	U.nmap("<cr>", submit_comment, comment_buf)
 end
 
 M.issue_move = function()
@@ -96,6 +98,8 @@ M.issue_move = function()
 		local move_buf = U.new_scratch()
 		vim.cmd("terminal jira issue move " .. key)
 		vim.api.nvim_buf_set_name(move_buf, "Jira Move")
+
+		--BUG: Not working
 		vim.api.nvim_create_autocmd("WinClosed", {
 			buffer = move_buf,
 			callback = function()
