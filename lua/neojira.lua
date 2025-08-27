@@ -128,6 +128,7 @@ M.close = function()
 end
 
 M.open_task = function()
+	M.task_list = U.get_text(M.buf_tasks)
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u%u%u%-%d+)")
 	M.selected_key = key
