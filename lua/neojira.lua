@@ -458,10 +458,22 @@ M.issue_time_log = function()
 		logs[key] = (logs[key] or 0) + seconds_from_str(time_str)
 		save_logs(logs)
 		vim.notify("Logged " .. time_str .. " on " .. key, 1)
+		-- Close comment window first
 		if comment_buf and vim.api.nvim_buf_is_valid(comment_buf) then
-			vim.api.nvim_buf_delete(comment_buf, {force = true})
+			for _, w in ipairs(vim.api.nvim_list_wins()) do
+				if vim.api.nvim_win_get_buf(w) == comment_buf then
+					vim.api.nvim_win_close(w, true)
+					break
+				end
+			end
 		end
-		vim.api.nvim_buf_delete(time_buf, {force = true})
+		-- Close time window
+		for _, w in ipairs(vim.api.nvim_list_wins()) do
+			if vim.api.nvim_win_get_buf(w) == time_buf then
+				vim.api.nvim_win_close(w, true)
+				break
+			end
+		end
 	end
 
 	local function log_time()
@@ -561,7 +573,7 @@ M.issue_time_log = function()
 
 	U.nmap("R", reset_today, time_buf)
 	U.nmap("d", delete_entry, time_buf)
-	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
+	U.nmap("q", function() vim.api.nvim_win_close(0, true) end, time_buf)
 end
 
 M.open_cached_list = function()
