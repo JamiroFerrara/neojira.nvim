@@ -23,15 +23,16 @@ M.get_all_tasks = function()
 	end, 100) -- Delay for 100 milliseconds
 
 	vim.defer_fn(function()
-		local jql_query = string.format('assignee = "%s" AND project IS NOT EMPTY AND created >= -50d', M.username)
+		local jql_query = string.format('assignee = "%s" AND project IS NOT EMPTY AND sprint in openSprints()', M.username)
 		local res = vim.fn.system(
-			"jira issue list --plain -s~Chiuso --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
+			"jira issue list --plain -s~Chiuso -s~Risolti -s~'Ready For Test' --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
 		)
 		M.task_list = res
 		U.put_text(M.buf_tasks, res)
 	end, 200) -- Delay for 100 milliseconds
 
 	U.nmap("<cr>", M.open_task, M.buf_tasks)
+	U.nmap("r", M.get_all_tasks, M.buf_tasks)
 	U.nmap("<bs>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<C-o>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<M-o>", M.open_cached_list, M.buf_tasks)
@@ -44,7 +45,7 @@ end
 M.issue_open_url = function()
 	if M.selected_key == "" then
 		local line = vim.api.nvim_get_current_line()
-		M.selected_key = line:match("(%u%u%u%-%d+)")
+		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 	end
 
 	if M.selected_key and M.selected_key ~= "" then
@@ -57,7 +58,7 @@ end
 M.issue_comment = function()
 	if M.selected_key == "" then
 		local line = vim.api.nvim_get_current_line()
-		M.selected_key = line:match("(%u%u%u%-%d+)")
+		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 	end
 	U.split(true)
 	local comment_buf = U.new_scratch()
@@ -88,15 +89,13 @@ end
 M.issue_move = function()
 	if M.selected_key == "" then
 		local line = vim.api.nvim_get_current_line()
-		M.selected_key = line:match("(%u%u%u%-%d+)")
+		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 	end
 
-	local line = vim.api.nvim_get_current_line()
-	local key = line:match("(%u%u%u%-%d+)")
-	if key then
+	if M.selected_key and M.selected_key ~= "" then
 		U.split(true)
 		local move_buf = U.new_scratch()
-		vim.cmd("terminal jira issue move " .. key)
+		vim.cmd("terminal jira issue move " .. M.selected_key)
 		vim.api.nvim_buf_set_name(move_buf, "Jira Move")
 
 		--BUG: Not working
@@ -130,7 +129,7 @@ end
 M.open_task = function()
 	M.task_list = U.get_text(M.buf_tasks)
 	local line = vim.api.nvim_get_current_line()
-	local key = line:match("(%u%u%u%-%d+)")
+	local key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 	M.selected_key = key
 
 	if key then
