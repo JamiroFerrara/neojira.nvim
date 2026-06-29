@@ -18,19 +18,40 @@ M.run = function()
 	M.get_all_tasks()
 end
 
+M.status_labels = {
+	["Aperto"] = "todo",
+	["Open"] = "todo",
+	["In corso"] = "inprog",
+	["In Progress"] = "inprog",
+	["On Hold"] = "more info",
+	["In attesa"] = "more info",
+	["Ready For Test"] = "r4t",
+	["Ready for Test"] = "r4t",
+}
+
 M.get_all_tasks = function()
 	vim.defer_fn(function()
 		U.put_text(M.buf_tasks, "Getting jira tasks..🔥")
-	end, 100) -- Delay for 100 milliseconds
+	end, 100)
 
 	vim.defer_fn(function()
 		local jql_query = string.format('assignee = "%s" AND project IS NOT EMPTY AND sprint in openSprints()', M.username)
 		local res = vim.fn.system(
-			"jira issue list --plain -s~Chiuso -s~Risolti -s~'Ready For Test' --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
+			"jira issue list --plain -s~Chiuso -s~Risolti --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
 		)
+		local lines = vim.split(res, "\n")
+		for i, line in ipairs(lines) do
+			local cols = vim.split(line, "\t")
+			if #cols >= 4 then
+				local label = M.status_labels[cols[2]] or cols[2]
+				cols[2] = label
+				lines[i] = table.concat(cols, "  ")
+			end
+		end
+		res = table.concat(lines, "\n")
 		M.task_list = res
 		U.put_text(M.buf_tasks, res)
-	end, 200) -- Delay for 100 milliseconds
+	end, 200)
 
 	U.nmap("<cr>", M.open_task, M.buf_tasks)
 	U.nmap("r", M.get_all_tasks, M.buf_tasks)
