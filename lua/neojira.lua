@@ -150,40 +150,23 @@ M.issue_move = function()
 		vim.notify("No valid task key found in the line. 💔", 1)
 	end
 end
-local function fetch_today_logs()
-	local token = os.getenv("JIRA_API_TOKEN")
-	if not token then return {} end
-	local email = "j.ferrara@novigo-consulting.it"
-	local auth = vim.trim(vim.fn.system("echo -n '" .. email .. ":" .. token .. "' | base64 -w0"))
-	local today = os.date("%Y-%m-%d")
+local log_file = "/tmp/neojira_today_logs.json"
 
-	local function api_get(url)
-		return vim.fn.system("curl -s --http1.1 -H 'Authorization: Basic " .. auth .. "' '" .. url .. "'")
+local function load_logs()
+	local f = io.open(log_file, "r")
+	if not f then return {} end
+	local ok, data = pcall(vim.json.decode, f:read("*a"))
+	f:close()
+	if not ok or type(data) ~= "table" then return {} end
+	return data
+end
+
+local function save_logs(logs)
+	local f = io.open(log_file, "w")
+	if f then
+		f:write(vim.json.encode(logs))
+		f:close()
 	end
-
-	local function api_post(url, body)
-		return vim.fn.system("curl -s --http1.1 -X POST -H 'Authorization: Basic " .. auth .. "' -H 'Content-Type: application/json' -d '" .. body .. "' '" .. url .. "'")
-	end
-
-	local search = api_post("https://novigo.atlassian.net/rest/api/3/search/jql", '{"jql":"worklogDate >= startOfDay()","fields":["key"],"maxResults":30}')
-	local ok, data = pcall(vim.json.decode, search)
-	if not ok or not data.issues then return {} end
-
-	local logs = {}
-	for _, issue in ipairs(data.issues) do
-		local res = api_get("https://novigo.atlassian.net/rest/api/3/issue/" .. issue.key .. "/worklog")
-		local ok2, wl = pcall(vim.json.decode, res)
-		if ok2 and wl.worklogs then
-			for _, entry in ipairs(wl.worklogs) do
-				local started = (entry.started or ""):sub(1, 10)
-				if started == today then
-					local sec = entry.timeSpentSeconds or 0
-					logs[issue.key] = (logs[issue.key] or 0) + sec
-				end
-			end
-		end
-	end
-	return logs
 end
 
 local function format_seconds(total_sec)
@@ -194,6 +177,11 @@ local function format_seconds(total_sec)
 	return h .. "h " .. m .. "m"
 end
 
+local function seconds_from_str(str)
+	local h = str:match("(%d+)h") or "0"
+	local m = str:match("(%d+)m") or "0"
+	return tonumber(h) * 3600 + tonumber(m) * 60
+end
 
 M.issue_time_log = function()
 	if M.selected_key == "" then
@@ -212,7 +200,7 @@ M.issue_time_log = function()
 	local key = M.selected_key
 
 	local function render()
-		local logs = fetch_today_logs()
+		local logs = load_logs()
 		local total = 0
 		for _, sec in pairs(logs) do total = total + sec end
 
@@ -259,8 +247,13 @@ M.issue_time_log = function()
 		end
 
 		vim.fn.system('jira issue worklog add ' .. key .. ' "' .. time_str .. '" --no-input')
+
+		local logs = load_logs()
+		logs[key] = (logs[key] or 0) + seconds_from_str(time_str)
+		save_logs(logs)
+
 		vim.notify("Logged " .. time_str .. " on " .. key, 1)
-		vim.api.nvim_buf_delete(time_buf, {force = true})
+		render()
 	end
 
 	U.nmap("<cr>", log_time, time_buf)
