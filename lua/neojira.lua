@@ -10,8 +10,9 @@ M.sort_order = "status"
 M.setup = function(config)
 	M.username = config.username
 	M.browser = config.browser
+	vim.api.nvim_set_hl(0, "NeojiraFav", { fg = "#89b4fa", bold = true })
+	M.fav_ns = vim.api.nvim_create_namespace("neojira_fav")
 	M.company_name = config.company_name
-
 	vim.api.nvim_create_user_command("Neojira", M.run, {})
 end
 
@@ -301,17 +302,21 @@ M.get_all_tasks = function()
 				return a < b
 			end)
 		end
+		-- Load today's logged time
+		local today_logs = load_logs()
 
-		-- Compute column widths
-		local widths = { key = 3, status = 6, summary = 7, assignee = 8 }
+		-- Compute column widths (including time column before assignee)
+		local widths = { key = 3, status = 6, summary = 7, time = 4, assignee = 8 }
 		local all_cols = {}
 		for _, k in ipairs(sorted) do
 			local cols = rows[k]
+			cols.time = format_seconds(today_logs[k] or 0)
 			table.insert(all_cols, cols)
 			widths.key = math.max(widths.key, #cols[1])
 			widths.status = math.max(widths.status, #cols[2])
 			widths.summary = math.max(widths.summary, #cols[3])
 			if widths.summary > 80 then widths.summary = 80 end
+			widths.time = math.max(widths.time, #cols.time)
 			widths.assignee = math.max(widths.assignee, #cols[4])
 		end
 
@@ -324,21 +329,31 @@ M.get_all_tasks = function()
 		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [f]avs:%d  [O]:%s", all_lbl, sts_lbl, fav_count, ord_lbl)
 		local sep = string.rep("─", #hdr)
 
-		-- Format lines
+		-- Format lines and track fav line numbers
 		local fmt_lines = { hdr, sep }
-		for _, cols in ipairs(all_cols) do
+		local fav_lines = {}  -- 0-indexed buffer line -> true
+		for i, cols in ipairs(all_cols) do
 			local key     = string.format("%-" .. widths.key .. "s", cols[1])
 			local status  = string.format("%-" .. widths.status .. "s", cols[2])
 			local summary = cols[3]
 			if #summary > 80 then summary = summary:sub(1, 77) .. "..." end
 			summary       = string.format("%-" .. widths.summary .. "s", summary)
+			local time    = string.format("%-" .. widths.time .. "s", cols.time)
 			local assignee = string.format("%-" .. widths.assignee .. "s", cols[4])
-			table.insert(fmt_lines, key .. "   " .. status .. "   " .. summary .. "   " .. assignee)
+			table.insert(fmt_lines, key .. "   " .. status .. "   " .. summary .. "   " .. time .. "   " .. assignee)
+			if favs[cols[1]] then
+				fav_lines[i + 1] = true  -- +1 for header
+			end
 		end
 
 		res = table.concat(fmt_lines, "\n")
 		M.task_list = res
 		U.put_text(M.buf_tasks, res)
+
+		-- Apply highlights to favourite rows
+		for line, _ in pairs(fav_lines) do
+			vim.api.nvim_buf_add_highlight(M.buf_tasks, M.fav_ns, "NeojiraFav", line, 0, -1)
+		end
 	end, 200)
 
 	U.nmap("<cr>", M.open_task, M.buf_tasks)
