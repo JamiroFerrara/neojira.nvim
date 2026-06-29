@@ -602,6 +602,7 @@ M.open_task = function()
 	if key then
 		local res = vim.fn.system("jira issue view --plain --comments=10 " .. key)
 		U.put_text(M.buf_tasks, res)
+		U.nmap("q", M.open_cached_list, M.buf_tasks)
 	else
 		vim.notify("No valid task key found in the line. 💔", 1)
 	end
