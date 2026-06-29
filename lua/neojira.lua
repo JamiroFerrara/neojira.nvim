@@ -268,6 +268,48 @@ M.issue_time_log = function()
 		render()
 	end
 
+
+	local function reset_today()
+		vim.ui.input({ prompt = "Delete all today's worklogs from server too? (y/N): " }, function(answer)
+			if answer ~= "y" and answer ~= "Y" then return end
+
+			-- Clear local file
+			save_logs({})
+
+			-- Delete from server via Jira API
+			local token = os.getenv("JIRA_API_TOKEN")
+			if token then
+				local email = "j.ferrara@novigo-consulting.it"
+				local auth = vim.trim(vim.fn.system("echo -n '" .. email .. ":" .. token .. "' | base64 -w0"))
+				local today = os.date("%Y-%m-%d")
+
+				local search = vim.fn.system("curl -s --http1.1 -X POST -H 'Authorization: Basic " .. auth .. "' -H 'Content-Type: application/json' -d '{\"jql\":\"worklogDate >= startOfDay()\",\"fields\":[\"key\"],\"maxResults\":30}' 'https://novigo.atlassian.net/rest/api/3/search/jql'")
+				local ok, data = pcall(vim.json.decode, search)
+				if ok and data.issues then
+					for _, issue in ipairs(data.issues) do
+						local res = vim.fn.system("curl -s --http1.1 -H 'Authorization: Basic " .. auth .. "' 'https://novigo.atlassian.net/rest/api/3/issue/" .. issue.key .. "/worklog'")
+						local ok2, wl = pcall(vim.json.decode, res)
+						if ok2 and wl.worklogs then
+							for _, entry in ipairs(wl.worklogs) do
+								local started = (entry.started or ""):sub(1, 10)
+								if started == today then
+									local id = entry.id
+									if id then
+										vim.fn.system("curl -s --http1.1 -X DELETE -H 'Authorization: Basic " .. auth .. "' 'https://novigo.atlassian.net/rest/api/3/issue/" .. issue.key .. "/worklog/" .. id .. "'")
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+
+			vim.notify("Today's time reset", 1)
+			render()
+		end)
+	end
+
+	U.nmap("R", reset_today, time_buf)
 	U.nmap("d", delete_entry, time_buf)
 	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
 
