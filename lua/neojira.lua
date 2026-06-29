@@ -39,16 +39,35 @@ M.get_all_tasks = function()
 		local res = vim.fn.system(
 			"jira issue list --plain -s~Chiuso -s~Risolti --columns key,status,summary,assignee --jql '" .. jql_query .. "'"
 		)
-		local lines = vim.split(res, "\n")
-		for i, line in ipairs(lines) do
+		local rows = {}
+		for _, line in ipairs(vim.split(res, "\n")) do
 			local cols = vim.split(line, "\t")
 			if #cols >= 4 then
-				local label = M.status_labels[cols[2]] or cols[2]
-				cols[2] = label
-				lines[i] = table.concat(cols, "  ")
+				cols[2] = M.status_labels[cols[2]] or cols[2]
+				table.insert(rows, cols)
 			end
 		end
-		res = table.concat(lines, "\n")
+
+		local widths = { key = 3, status = 6, summary = 7, assignee = 8 }
+		for _, cols in ipairs(rows) do
+			widths.key = math.max(widths.key, #cols[1])
+			widths.status = math.max(widths.status, #cols[2])
+			widths.summary = math.max(widths.summary, #cols[3])
+			if widths.summary > 80 then widths.summary = 80 end
+			widths.assignee = math.max(widths.assignee, #cols[4])
+		end
+
+		local fmt_lines = {}
+		for _, cols in ipairs(rows) do
+			local key     = string.format("%-" .. widths.key .. "s", cols[1])
+			local status  = string.format("%-" .. widths.status .. "s", cols[2])
+			local summary = cols[3]
+			if #summary > 80 then summary = summary:sub(1, 77) .. "..." end
+			summary       = string.format("%-" .. widths.summary .. "s", summary)
+			local assignee = string.format("%-" .. widths.assignee .. "s", cols[4])
+			table.insert(fmt_lines, key .. "   " .. status .. "   " .. summary .. "   " .. assignee)
+		end
+		res = table.concat(fmt_lines, "\n")
 		M.task_list = res
 		U.put_text(M.buf_tasks, res)
 	end, 200)
