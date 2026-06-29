@@ -257,6 +257,18 @@ M.issue_time_log = function()
 	end
 
 	U.nmap("<cr>", log_time, time_buf)
+	local function delete_entry()
+		local line = vim.api.nvim_get_current_line()
+		local entry_key = line:match("^%s+([A-Z][A-Z0-9]+%-%d+)")
+		if not entry_key then return end
+		local logs = load_logs()
+		if not logs[entry_key] then return end
+		logs[entry_key] = nil
+		save_logs(logs)
+		render()
+	end
+
+	U.nmap("d", delete_entry, time_buf)
 	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
 
 end
