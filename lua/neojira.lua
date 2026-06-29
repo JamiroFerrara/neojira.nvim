@@ -474,12 +474,7 @@ M.issue_time_log = function()
 		end
 	end
 
-	local function log_time()
-		local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-		local line_content = vim.api.nvim_buf_get_lines(time_buf, cursor_line - 1, cursor_line, false)[1]
-		local time_str = line_content:match("^%s+(.+)")
-		if not time_str or time_str == "" then return end
-
+	local function start_comment(time_str)
 		pending_time = time_str
 
 		U.split(true)
@@ -500,7 +495,18 @@ M.issue_time_log = function()
 		U.nmap("q", function() do_log(pending_time, "") end, comment_buf)
 	end
 
+	local function log_time()
+		local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+		local line_content = vim.api.nvim_buf_get_lines(time_buf, cursor_line - 1, cursor_line, false)[1]
+		local time_str = line_content:match("^%s+(.+)")
+		if not time_str or time_str == "" then return end
+		start_comment(time_str)
+	end
+
 	U.nmap("<cr>", log_time, time_buf)
+	for i = 1, 8 do
+		U.nmap(tostring(i), function() start_comment(i .. "h") end, time_buf)
+	end
 
 	local function delete_entry()
 		local line = vim.api.nvim_get_current_line()
