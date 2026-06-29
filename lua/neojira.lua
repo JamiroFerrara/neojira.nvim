@@ -3,6 +3,8 @@ local U = require("./utils")
 
 M.selected_key = ""
 M.task_list = ""
+M.show_all_assignees = false
+M.show_all_statuses = false
 
 M.setup = function(config)
 	M.username = config.username
@@ -26,6 +28,13 @@ M.status_labels = {
 	["In attesa"] = "more info",
 	["Ready For Test"] = "r4t",
 	["Ready for Test"] = "r4t",
+}
+
+M.status_order = {
+	todo = 1,
+	inprog = 2,
+	["more info"] = 3,
+	r4t = 4,
 }
 
 M.get_all_tasks = function()
@@ -169,6 +178,30 @@ local function save_logs(logs)
 	end
 end
 
+local fav_file = "/tmp/neojira_favourites.json"
+
+local function load_favs()
+	local f = io.open(fav_file, "r")
+	if not f then return {} end
+	local ok, data = pcall(vim.json.decode, f:read("*a"))
+	f:close()
+	if not ok or type(data) ~= "table" then return {} end
+	local set = {}
+	for _, k in ipairs(data) do set[k] = true end
+	return set
+end
+
+local function save_favs(favs)
+	local list = {}
+	for k in pairs(favs) do table.insert(list, k) end
+	table.sort(list)
+	local f = io.open(fav_file, "w")
+	if f then
+		f:write(vim.json.encode(list))
+		f:close()
+	end
+end
+
 local function format_seconds(total_sec)
 	if total_sec <= 0 then return "0h" end
 	local h = math.floor(total_sec / 3600)
@@ -181,6 +214,142 @@ local function seconds_from_str(str)
 	local h = str:match("(%d+)h") or "0"
 	local m = str:match("(%d+)m") or "0"
 	return tonumber(h) * 3600 + tonumber(m) * 60
+end
+
+local function status_rank(label)
+	local rank = M.status_order[label]
+	return rank or 5
+end
+
+M.get_all_tasks = function()
+	vim.defer_fn(function()
+		U.put_text(M.buf_tasks, "Getting jira tasks..🔥")
+	end, 100)
+
+	vim.defer_fn(function()
+		-- Build JQL with optional assignee filter
+		local jql = 'project IS NOT EMPTY AND sprint in openSprints()'
+		if not M.show_all_assignees then
+			jql = 'assignee = "' .. M.username .. '" AND ' .. jql
+		end
+
+		-- Build status exclusions
+		local status_filter = ''
+		if not M.show_all_statuses then
+			status_filter = '-s~Chiuso -s~Risolti'
+		end
+
+		-- Fetch main list
+		local cmd = "jira issue list --plain --columns key,status,summary,assignee " .. status_filter .. " --jql '" .. jql .. "'"
+		local res = vim.fn.system(cmd)
+
+		-- Parse rows into a dict (key -> cols) for dedup
+		local rows = {}
+		for _, line in ipairs(vim.split(res, "\n")) do
+			local cols = vim.split(line, "\t")
+			if #cols >= 4 then
+				cols[2] = M.status_labels[cols[2]] or cols[2]
+				rows[cols[1]] = cols
+			end
+		end
+
+		-- Fetch favourites (unfiltered) and merge
+		local favs = load_favs()
+		local fav_keys = {}
+		for k in pairs(favs) do table.insert(fav_keys, k) end
+		if #fav_keys > 0 then
+			local or_clauses = {}
+			for _, k in ipairs(fav_keys) do
+				table.insert(or_clauses, 'key = "' .. k .. '"')
+			end
+			local fav_cmd = "jira issue list --plain --no-headers --columns key,status,summary,assignee --jql '" .. table.concat(or_clauses, " OR ") .. "'"
+			local fav_res = vim.fn.system(fav_cmd)
+			for _, line in ipairs(vim.split(fav_res, "\n")) do
+				local cols = vim.split(line, "\t")
+				if #cols >= 4 then
+					cols[2] = M.status_labels[cols[2]] or cols[2]
+					if not rows[cols[1]] then
+						rows[cols[1]] = cols
+					end
+				end
+			end
+		end
+
+		-- Convert to list sorted by status rank, then key
+		local sorted = {}
+		for k in pairs(rows) do table.insert(sorted, k) end
+		table.sort(sorted, function(a, b)
+			local ra = status_rank(rows[a][2])
+			local rb = status_rank(rows[b][2])
+			if ra ~= rb then return ra < rb end
+			return a < b
+		end)
+
+		-- Compute column widths
+		local widths = { key = 3, status = 6, summary = 7, assignee = 8 }
+		local all_cols = {}
+		for _, k in ipairs(sorted) do
+			local cols = rows[k]
+			table.insert(all_cols, cols)
+			widths.key = math.max(widths.key, #cols[1])
+			widths.status = math.max(widths.status, #cols[2])
+			widths.summary = math.max(widths.summary, #cols[3])
+			if widths.summary > 80 then widths.summary = 80 end
+			widths.assignee = math.max(widths.assignee, #cols[4])
+		end
+
+		-- Build filter status header
+		local all_lbl = M.show_all_assignees and "ON " or "OFF"
+		local sts_lbl = M.show_all_statuses and "ON " or "OFF"
+		local fav_count = 0
+		for _ in pairs(favs) do fav_count = fav_count + 1 end
+		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [f]avs:%d", all_lbl, sts_lbl, fav_count)
+		local sep = string.rep("─", #hdr)
+
+		-- Format lines
+		local fmt_lines = { hdr, sep }
+		for _, cols in ipairs(all_cols) do
+			local key     = string.format("%-" .. widths.key .. "s", cols[1])
+			local status  = string.format("%-" .. widths.status .. "s", cols[2])
+			local summary = cols[3]
+			if #summary > 80 then summary = summary:sub(1, 77) .. "..." end
+			summary       = string.format("%-" .. widths.summary .. "s", summary)
+			local assignee = string.format("%-" .. widths.assignee .. "s", cols[4])
+			table.insert(fmt_lines, key .. "   " .. status .. "   " .. summary .. "   " .. assignee)
+		end
+
+		res = table.concat(fmt_lines, "\n")
+		M.task_list = res
+		U.put_text(M.buf_tasks, res)
+	end, 200)
+
+	U.nmap("<cr>", M.open_task, M.buf_tasks)
+	U.nmap("r", M.get_all_tasks, M.buf_tasks)
+	U.nmap("<bs>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<C-o>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<M-o>", M.open_cached_list, M.buf_tasks)
+	U.nmap("<leader>q", M.close, M.buf_tasks)
+	U.nmap("m", M.issue_move, M.buf_tasks)
+	U.nmap("t", M.issue_time_log, M.buf_tasks)
+	U.nmap("c", M.issue_comment, M.buf_tasks)
+	U.nmap("o", M.issue_open_url, M.buf_tasks)
+	U.nmap("a", function() M.show_all_assignees = not M.show_all_assignees; M.get_all_tasks() end, M.buf_tasks)
+	U.nmap("s", function() M.show_all_statuses = not M.show_all_statuses; M.get_all_tasks() end, M.buf_tasks)
+	U.nmap("f", function()
+		local line = vim.api.nvim_get_current_line()
+		local key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
+		if not key then return end
+		local favs = load_favs()
+		if favs[key] then
+			favs[key] = nil
+			vim.notify("Unpinned " .. key, 1)
+		else
+			favs[key] = true
+			vim.notify("Pinned " .. key, 1)
+		end
+		save_favs(favs)
+		M.get_all_tasks()
+	end, M.buf_tasks)
 end
 
 M.issue_time_log = function()
@@ -211,7 +380,6 @@ M.issue_time_log = function()
 			"",
 		}
 
-		-- Sort keys alphabetically for stable display
 		local sorted_keys = {}
 		for k in pairs(logs) do table.insert(sorted_keys, k) end
 		table.sort(sorted_keys)
@@ -268,15 +436,12 @@ M.issue_time_log = function()
 		render()
 	end
 
-
 	local function reset_today()
 		vim.ui.input({ prompt = "Delete all today's worklogs from server too? (y/N): " }, function(answer)
 			if answer ~= "y" and answer ~= "Y" then return end
 
-			-- Clear local file
 			save_logs({})
 
-			-- Delete from server via Jira API
 			local token = os.getenv("JIRA_API_TOKEN")
 			if token then
 				local email = "j.ferrara@novigo-consulting.it"
@@ -312,8 +477,8 @@ M.issue_time_log = function()
 	U.nmap("R", reset_today, time_buf)
 	U.nmap("d", delete_entry, time_buf)
 	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
-
 end
+
 M.open_cached_list = function()
 	M.selected_key = ""
 	if M.task_list ~= nil then
