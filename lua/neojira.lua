@@ -441,32 +441,80 @@ M.issue_time_log = function()
 
 	render()
 
-	local function log_time()
-		local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-		local line_content = vim.api.nvim_buf_get_lines(time_buf, cursor_line - 1, cursor_line, false)[1]
-		local time_str = line_content:match("^%s+(.+)")
+	local pending_time = ""
+	local comment_buf = nil
 
-		if not time_str or time_str == "" then
-			return
+	local function do_log(time_str, comment)
+		local cmd = 'jira issue worklog add ' .. key .. ' "' .. time_str .. '"'
+		if comment and comment ~= "" then
+			local f = io.open("/tmp/neojira_comment.txt", "w")
+			if f then f:write(comment); f:close() end
+			cmd = cmd .. " --comment \"$(cat /tmp/neojira_comment.txt)\""
 		end
-
-		vim.fn.system('jira issue worklog add ' .. key .. ' "' .. time_str .. '" --no-input')
+		cmd = cmd .. " --no-input"
+		vim.fn.system(cmd)
 
 		local logs = load_logs()
 		logs[key] = (logs[key] or 0) + seconds_from_str(time_str)
 		save_logs(logs)
-
 		vim.notify("Logged " .. time_str .. " on " .. key, 1)
-		render()
+		if comment_buf and vim.api.nvim_buf_is_valid(comment_buf) then
+			vim.api.nvim_buf_delete(comment_buf, {force = true})
+		end
+		vim.api.nvim_buf_delete(time_buf, {force = true})
+	end
+
+	local function log_time()
+		local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+		local line_content = vim.api.nvim_buf_get_lines(time_buf, cursor_line - 1, cursor_line, false)[1]
+		local time_str = line_content:match("^%s+(.+)")
+		if not time_str or time_str == "" then return end
+
+		pending_time = time_str
+
+		U.split(true)
+		comment_buf = U.new_scratch()
+		vim.bo[comment_buf].filetype = "neojira-comment"
+		U.put_text(comment_buf, "Comment for " .. key .. " " .. time_str .. " (empty to skip):\n\n")
+		vim.api.nvim_win_set_cursor(0, {3, 0})
+
+		local function submit_comment()
+			local lines = vim.api.nvim_buf_get_lines(comment_buf, 0, -1, false)
+			local comment = table.concat(lines, "\n"):gsub("^Comment for .+ %(empty to skip%):\n\n", ""):gsub("^\n*", ""):gsub("\n*$", "")
+			do_log(pending_time, comment)
+		end
+
+		U.nmap("<cr>", submit_comment, comment_buf)
+		U.nmap("q", function() do_log(pending_time, "") end, comment_buf)
 	end
 
 	U.nmap("<cr>", log_time, time_buf)
+
 	local function delete_entry()
 		local line = vim.api.nvim_get_current_line()
 		local entry_key = line:match("^%s+([A-Z][A-Z0-9]+%-%d+)")
 		if not entry_key then return end
+
+		-- Remote delete via Jira API
+		local token = os.getenv("JIRA_API_TOKEN")
+		if token then
+			local email = "j.ferrara@novigo-consulting.it"
+			local auth = vim.trim(vim.fn.system("echo -n '" .. email .. ":" .. token .. "' | base64 -w0"))
+			local today = os.date("%Y-%m-%d")
+			local res = vim.fn.system("curl -s --http1.1 -H 'Authorization: Basic " .. auth .. "' 'https://novigo.atlassian.net/rest/api/3/issue/" .. entry_key .. "/worklog'")
+			local ok, wl = pcall(vim.json.decode, res)
+			if ok and wl.worklogs then
+				for _, entry in ipairs(wl.worklogs) do
+					local started = (entry.started or ""):sub(1, 10)
+					if started == today and entry.id then
+						vim.fn.system("curl -s --http1.1 -X DELETE -H 'Authorization: Basic " .. auth .. "' 'https://novigo.atlassian.net/rest/api/3/issue/" .. entry_key .. "/worklog/" .. entry.id .. "'")
+					end
+				end
+			end
+		end
+
+		-- Local removal
 		local logs = load_logs()
-		if not logs[entry_key] then return end
 		logs[entry_key] = nil
 		save_logs(logs)
 		render()
