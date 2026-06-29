@@ -246,7 +246,12 @@ M.get_all_tasks = function()
 		-- Parse rows into a dict (key -> cols) for dedup
 		local rows = {}
 		for _, line in ipairs(vim.split(res, "\n")) do
-			local cols = vim.split(line, "\t")
+			local raw = vim.split(line, "\t")
+			-- Compact: remove empty fields to handle jira CLI cross-project tab padding
+			local cols = {}
+			for _, v in ipairs(raw) do
+				if v ~= "" then table.insert(cols, v) end
+			end
 			if #cols >= 4 then
 				cols[2] = M.status_labels[cols[2]] or cols[2]
 				rows[cols[1]] = cols
