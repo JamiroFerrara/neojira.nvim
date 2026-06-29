@@ -3,6 +3,7 @@ local U = require("./utils")
 
 M.selected_key = ""
 M.task_list = ""
+M.today_logs = {}  -- key -> seconds logged today
 
 M.setup = function(config)
 	M.username = config.username
@@ -38,6 +39,7 @@ M.get_all_tasks = function()
 	U.nmap("<M-o>", M.open_cached_list, M.buf_tasks)
 	U.nmap("<leader>q", M.close, M.buf_tasks)
 	U.nmap("m", M.issue_move, M.buf_tasks)
+	U.nmap("t", M.issue_time_log, M.buf_tasks)
 	U.nmap("c", M.issue_comment, M.buf_tasks)
 	U.nmap("o", M.issue_open_url, M.buf_tasks)
 end
@@ -108,6 +110,78 @@ M.issue_move = function()
 	else
 		vim.notify("No valid task key found in the line. 💔", 1)
 	end
+end
+
+local function format_seconds(total_sec)
+	if total_sec <= 0 then return "0h" end
+	local h = math.floor(total_sec / 3600)
+	local m = math.floor((total_sec % 3600) / 60)
+	if m == 0 then return h .. "h" end
+	return h .. "h " .. m .. "m"
+end
+
+local function seconds_from_str(str)
+	local h = str:match("(%d+)h") or "0"
+	local m = str:match("(%d+)m") or "0"
+	return tonumber(h) * 3600 + tonumber(m) * 60
+end
+
+M.issue_time_log = function()
+	if M.selected_key == "" then
+		local line = vim.api.nvim_get_current_line()
+		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
+	end
+
+	if not M.selected_key or M.selected_key == "" then
+		vim.notify("No valid task key found in the line. 💔", 1)
+		return
+	end
+
+	U.split(true)
+	local time_buf = U.new_scratch()
+	vim.bo[time_buf].filetype = "neojira-time"
+	local key = M.selected_key
+
+	local function render()
+		local total = 0
+		for _, sec in pairs(M.today_logs) do total = total + sec end
+		local lines = {
+			"Log time for: " .. key,
+			"Today's total: " .. format_seconds(total),
+			"",
+			"Select a duration and press <cr> to log:",
+			"",
+		}
+		for i = 0.5, 8, 0.5 do
+			local h = math.floor(i)
+			local m = (i - h) * 60
+			local label = m == 0 and h .. "h" or h .. "h " .. m .. "m"
+			table.insert(lines, "  " .. label)
+		end
+		table.insert(lines, "")
+		table.insert(lines, "Press q to close")
+		U.put_text(time_buf, table.concat(lines, "\n"))
+	end
+
+	render()
+
+	local function log_time()
+		local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+		local line_content = vim.api.nvim_buf_get_lines(time_buf, cursor_line - 1, cursor_line, false)[1]
+		local time_str = line_content:match("^%s+(.+)")
+
+		if not time_str or time_str == "" then
+			return
+		end
+
+		vim.fn.system('jira issue worklog add ' .. key .. ' "' .. time_str .. '" --no-input')
+		M.today_logs[key] = (M.today_logs[key] or 0) + seconds_from_str(time_str)
+		vim.notify("Logged " .. time_str .. " on " .. key, 1)
+		render()
+	end
+
+	U.nmap("<cr>", log_time, time_buf)
+	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
 end
 
 M.open_cached_list = function()
