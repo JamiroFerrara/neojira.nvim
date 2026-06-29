@@ -477,6 +477,7 @@ M.issue_time_log = function()
 		vim.bo[comment_buf].filetype = "neojira-comment"
 		U.put_text(comment_buf, "Comment for " .. key .. " " .. time_str .. " (empty to skip):\n\n")
 		vim.api.nvim_win_set_cursor(0, {3, 0})
+		vim.cmd("startinsert")
 
 		local function submit_comment()
 			local lines = vim.api.nvim_buf_get_lines(comment_buf, 0, -1, false)
