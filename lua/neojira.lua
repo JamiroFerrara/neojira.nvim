@@ -498,6 +498,7 @@ M.issue_time_log = function()
 		end
 
 		U.nmap("<cr>", submit_comment, comment_buf)
+		U.imap("<cr>", submit_comment, comment_buf)
 		U.nmap("q", function() do_log(pending_time, "") end, comment_buf)
 	end
 
