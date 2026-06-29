@@ -389,12 +389,10 @@ M.get_all_tasks = function()
 end
 M.issue_time_log = function()
 
-	if M.selected_key == "" then
-		local line = vim.api.nvim_get_current_line()
-		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
-	end
+	local line = vim.api.nvim_get_current_line()
+	M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 
-	if not M.selected_key or M.selected_key == "" then
+	if not M.selected_key then
 		vim.notify("No valid task key found in the line. 💔", 1)
 		return
 	end
