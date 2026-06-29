@@ -3,7 +3,6 @@ local U = require("./utils")
 
 M.selected_key = ""
 M.task_list = ""
-M.today_logs = {}  -- key -> seconds logged today
 
 M.setup = function(config)
 	M.username = config.username
@@ -151,6 +150,24 @@ M.issue_move = function()
 		vim.notify("No valid task key found in the line. 💔", 1)
 	end
 end
+local log_file = "/tmp/neojira_today_logs.json"
+
+local function load_logs()
+	local f = io.open(log_file, "r")
+	if not f then return {} end
+	local ok, data = pcall(vim.json.decode, f:read("*a"))
+	f:close()
+	if not ok or type(data) ~= "table" then return {} end
+	return data
+end
+
+local function save_logs(logs)
+	local f = io.open(log_file, "w")
+	if f then
+		f:write(vim.json.encode(logs))
+		f:close()
+	end
+end
 
 local function format_seconds(total_sec)
 	if total_sec <= 0 then return "0h" end
@@ -183,15 +200,30 @@ M.issue_time_log = function()
 	local key = M.selected_key
 
 	local function render()
+		local logs = load_logs()
 		local total = 0
-		for _, sec in pairs(M.today_logs) do total = total + sec end
+		for _, sec in pairs(logs) do total = total + sec end
+
 		local lines = {
 			"Log time for: " .. key,
+			"",
 			"Today's total: " .. format_seconds(total),
 			"",
-			"Select a duration and press <cr> to log:",
-			"",
 		}
+
+		-- Sort keys alphabetically for stable display
+		local sorted_keys = {}
+		for k in pairs(logs) do table.insert(sorted_keys, k) end
+		table.sort(sorted_keys)
+
+		for _, k in ipairs(sorted_keys) do
+			table.insert(lines, "  " .. k .. "  " .. format_seconds(logs[k]))
+		end
+
+		table.insert(lines, "")
+		table.insert(lines, "Select a duration and press <cr> to log:")
+		table.insert(lines, "")
+
 		for i = 0.5, 8, 0.5 do
 			local h = math.floor(i)
 			local m = (i - h) * 60
@@ -215,15 +247,19 @@ M.issue_time_log = function()
 		end
 
 		vim.fn.system('jira issue worklog add ' .. key .. ' "' .. time_str .. '" --no-input')
-		M.today_logs[key] = (M.today_logs[key] or 0) + seconds_from_str(time_str)
+
+		local logs = load_logs()
+		logs[key] = (logs[key] or 0) + seconds_from_str(time_str)
+		save_logs(logs)
+
 		vim.notify("Logged " .. time_str .. " on " .. key, 1)
 		render()
 	end
 
 	U.nmap("<cr>", log_time, time_buf)
 	U.nmap("q", function() vim.api.nvim_buf_delete(time_buf, {force = true}) end, time_buf)
-end
 
+end
 M.open_cached_list = function()
 	M.selected_key = ""
 	if M.task_list ~= nil then
