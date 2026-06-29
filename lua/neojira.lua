@@ -5,6 +5,7 @@ M.selected_key = ""
 M.task_list = ""
 M.show_all_assignees = false
 M.show_all_statuses = false
+M.sort_order = "status"
 
 M.setup = function(config)
 	M.username = config.username
@@ -238,9 +239,9 @@ M.get_all_tasks = function()
 		if not M.show_all_statuses then
 			status_filter = '-s~Chiuso -s~Risolti'
 		end
-
-		-- Fetch main list
-		local cmd = "jira issue list --plain --no-headers --columns key,status,summary,assignee " .. status_filter .. " --jql '" .. jql .. "'"
+		local cols = "key,status,summary,assignee"
+		if M.sort_order == "recent" then cols = cols .. ",updated" end
+		local cmd = "jira issue list --plain --no-headers --columns " .. cols .. " " .. status_filter .. " --jql '" .. jql .. "'"
 		local res = vim.fn.system(cmd)
 
 		-- Parse rows into a dict (key -> cols) for dedup
@@ -267,28 +268,39 @@ M.get_all_tasks = function()
 			for _, k in ipairs(fav_keys) do
 				table.insert(or_clauses, 'key = "' .. k .. '"')
 			end
-			local fav_cmd = "jira issue list --plain --no-headers --columns key,status,summary,assignee --jql '" .. table.concat(or_clauses, " OR ") .. "'"
+			local fav_cmd = "jira issue list --plain --no-headers --columns " .. cols .. " --jql '" .. table.concat(or_clauses, " OR ") .. "'"
 			local fav_res = vim.fn.system(fav_cmd)
 			for _, line in ipairs(vim.split(fav_res, "\n")) do
-				local cols = vim.split(line, "\t")
-				if #cols >= 4 then
-					cols[2] = M.status_labels[cols[2]] or cols[2]
-					if not rows[cols[1]] then
-						rows[cols[1]] = cols
+				local raw = vim.split(line, "\t")
+				local ccols = {}
+				for _, v in ipairs(raw) do
+					if v ~= "" then table.insert(ccols, v) end
+				end
+				if #ccols >= 4 then
+					ccols[2] = M.status_labels[ccols[2]] or ccols[2]
+					if not rows[ccols[1]] then
+						rows[ccols[1]] = ccols
 					end
 				end
 			end
 		end
-
-		-- Convert to list sorted by status rank, then key
 		local sorted = {}
 		for k in pairs(rows) do table.insert(sorted, k) end
-		table.sort(sorted, function(a, b)
-			local ra = status_rank(rows[a][2])
-			local rb = status_rank(rows[b][2])
-			if ra ~= rb then return ra < rb end
-			return a < b
-		end)
+		if M.sort_order == "recent" then
+			table.sort(sorted, function(a, b)
+				local da = rows[a][5] or ""
+				local db = rows[b][5] or ""
+				if da ~= db then return da > db end
+				return a < b
+			end)
+		else
+			table.sort(sorted, function(a, b)
+				local ra = status_rank(rows[a][2])
+				local rb = status_rank(rows[b][2])
+				if ra ~= rb then return ra < rb end
+				return a < b
+			end)
+		end
 
 		-- Compute column widths
 		local widths = { key = 3, status = 6, summary = 7, assignee = 8 }
@@ -308,7 +320,8 @@ M.get_all_tasks = function()
 		local sts_lbl = M.show_all_statuses and "ON " or "OFF"
 		local fav_count = 0
 		for _ in pairs(favs) do fav_count = fav_count + 1 end
-		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [f]avs:%d", all_lbl, sts_lbl, fav_count)
+		local ord_lbl = M.sort_order == "recent" and "recent" or "status"
+		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [f]avs:%d  [O]:%s", all_lbl, sts_lbl, fav_count, ord_lbl)
 		local sep = string.rep("─", #hdr)
 
 		-- Format lines
@@ -338,6 +351,10 @@ M.get_all_tasks = function()
 	U.nmap("t", M.issue_time_log, M.buf_tasks)
 	U.nmap("c", M.issue_comment, M.buf_tasks)
 	U.nmap("o", M.issue_open_url, M.buf_tasks)
+	U.nmap("O", function()
+		M.sort_order = (M.sort_order == "status") and "recent" or "status"
+		M.get_all_tasks()
+	end, M.buf_tasks)
 	U.nmap("a", function() M.show_all_assignees = not M.show_all_assignees; M.get_all_tasks() end, M.buf_tasks)
 	U.nmap("s", function() M.show_all_statuses = not M.show_all_statuses; M.get_all_tasks() end, M.buf_tasks)
 	U.nmap("f", function()
