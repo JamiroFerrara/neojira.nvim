@@ -319,14 +319,13 @@ M.get_all_tasks = function()
 			widths.time = math.max(widths.time, #cols.time)
 			widths.assignee = math.max(widths.assignee, #cols[4])
 		end
-
 		-- Build filter status header
 		local all_lbl = M.show_all_assignees and "ON " or "OFF"
 		local sts_lbl = M.show_all_statuses and "ON " or "OFF"
 		local fav_count = 0
 		for _ in pairs(favs) do fav_count = fav_count + 1 end
 		local ord_lbl = M.sort_order == "recent" and "recent" or "status"
-		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [f]avs:%d  [O]:%s", all_lbl, sts_lbl, fav_count, ord_lbl)
+		local hdr = string.format("[a]ll:%s  [s]tatus:%s  [F]avs:%d  [O]:%s", all_lbl, sts_lbl, fav_count, ord_lbl)
 		local sep = string.rep("─", #hdr)
 
 		-- Format lines and track fav line numbers
@@ -372,7 +371,7 @@ M.get_all_tasks = function()
 	end, M.buf_tasks)
 	U.nmap("a", function() M.show_all_assignees = not M.show_all_assignees; M.get_all_tasks() end, M.buf_tasks)
 	U.nmap("s", function() M.show_all_statuses = not M.show_all_statuses; M.get_all_tasks() end, M.buf_tasks)
-	U.nmap("f", function()
+	U.nmap("F", function()
 		local line = vim.api.nvim_get_current_line()
 		local key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
 		if not key then return end
@@ -388,8 +387,8 @@ M.get_all_tasks = function()
 		M.get_all_tasks()
 	end, M.buf_tasks)
 end
-
 M.issue_time_log = function()
+
 	if M.selected_key == "" then
 		local line = vim.api.nvim_get_current_line()
 		M.selected_key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
