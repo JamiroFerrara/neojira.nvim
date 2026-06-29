@@ -240,7 +240,7 @@ M.get_all_tasks = function()
 		end
 
 		-- Fetch main list
-		local cmd = "jira issue list --plain --columns key,status,summary,assignee " .. status_filter .. " --jql '" .. jql .. "'"
+		local cmd = "jira issue list --plain --no-headers --columns key,status,summary,assignee " .. status_filter .. " --jql '" .. jql .. "'"
 		local res = vim.fn.system(cmd)
 
 		-- Parse rows into a dict (key -> cols) for dedup
