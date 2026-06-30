@@ -34,6 +34,39 @@ function Jira.new(config)
 		return vim.fn.system(cmd)
 	end
 
+	--- Run a shell command asynchronously via jobstart.
+	--- @param cmd string
+	--- @param on_done function(output: string)
+	local function run_async(cmd, on_done)
+		local stdout_data = {}
+		local job_id = vim.fn.jobstart(cmd, {
+			on_stdout = function(_, data)
+				if not data then return end
+				for i = 1, #data - 1 do
+					table.insert(stdout_data, data[i])
+				end
+			end,
+			on_exit = function()
+				on_done(table.concat(stdout_data, "\n"))
+			end,
+		})
+		if job_id <= 0 then
+			on_done("")
+		end
+	end
+
+	--- Fetch issues matching a JQL query, asynchronously.
+	--- @param jql string
+	--- @param columns string — comma-separated column names
+	--- @param status_filter string — e.g. "-s~Chiuso -s~Risolti" or ""
+	--- @param on_done function(output: string)
+	local function list_issues_async(jql, columns, status_filter, on_done)
+		status_filter = status_filter or ""
+		local cmd = "jira issue list --plain --no-headers --columns " .. columns
+			.. " " .. status_filter .. " --jql '" .. jql .. "'"
+		run_async(cmd, on_done)
+	end
+
 	--- View a single issue with comments.
 	--- @param key string — e.g. "PROJ-123"
 	--- @param ncomments integer — number of comments to show (default 10)
@@ -128,8 +161,18 @@ function Jira.new(config)
 		return nil
 	end
 
+	--- Search issues by text across all projects.
+	--- @param query string — free-text search
+	--- @return string — raw tab-separated output
+	local function search_issues(query)
+		local jql = 'text ~ "' .. query:gsub('"', '\\"') .. '" ORDER BY updated DESC'
+		return list_issues(jql, "key,status,summary,assignee", "")
+	end
+
 	return {
 		list_issues = list_issues,
+		list_issues_async = list_issues_async,
+		search_issues = search_issues,
 		view_issue = view_issue,
 		move_issue = move_issue,
 		add_comment = add_comment,

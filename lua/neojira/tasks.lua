@@ -1,5 +1,29 @@
 --- Tasks — fetch, display, and navigate the Jira issue list.
 local Tasks = {}
+local CACHE_DIR = vim.fn.stdpath("data") .. "/neojira"
+local CACHE_FILE = CACHE_DIR .. "/task_cache.json"
+
+--- Persist the rendered task list to disk for fast startup.
+--- @param text string
+function Tasks._save_cache(text)
+	vim.fn.mkdir(CACHE_DIR, "p")
+	local f = io.open(CACHE_FILE, "w")
+	if f then
+		f:write(vim.json.encode({ cached_at = os.date("%Y-%m-%dT%H:%M:%S"), text = text }))
+		f:close()
+	end
+end
+
+--- Load the cached task list. Returns the cached text or nil.
+--- @return string|nil
+function Tasks.load_cache()
+	local f = io.open(CACHE_FILE, "r")
+	if not f then return nil end
+	local ok, data = pcall(vim.json.decode, f:read("*a"))
+	f:close()
+	if not ok or type(data) ~= "table" or not data.text then return nil end
+	return data.text
+end
 
 --- Extract issue key from the current buffer line.
 --- @return string|nil
@@ -19,30 +43,30 @@ function Tasks.fetch_all(state, deps)
 	if not state.buf_tasks then return end
 
 	vim.defer_fn(function()
-		deps.display.put_text(state.buf_tasks, "Getting jira tasks..🔥")
+		-- Only show loading if no cached content is already displayed
+		local current = vim.api.nvim_buf_get_lines(state.buf_tasks, 0, 1, false)
+		if not current or #current == 0 or current[1] == "" then
+			deps.display.put_text(state.buf_tasks, "Getting jira tasks..🔥")
+		end
 	end, 100)
 
-	vim.defer_fn(function()
-		-- Build JQL
-		local jql = 'project IS NOT EMPTY AND sprint in openSprints()'
-		if not state.show_all_assignees then
-			jql = 'assignee = "' .. state.username .. '" AND ' .. jql
-		end
+	-- Build JQL
+	local jql = 'project IS NOT EMPTY AND sprint in openSprints()'
+	if not state.show_all_assignees then
+		jql = 'assignee = "' .. state.username .. '" AND ' .. jql
+	end
 
-		-- Build status exclusions
-		local status_filter = ''
-		if not state.show_all_statuses then
-			status_filter = '-s~Chiuso -s~Risolti'
-		end
+	-- Build status exclusions
+	local status_filter = ''
+	if not state.show_all_statuses then
+		status_filter = '-s~Chiuso -s~Risolti'
+	end
 
-		local cols = "key,status,summary,assignee"
-		if state.sort_order == "recent" then cols = cols .. ",updated" end
+	local cols = "key,status,summary,assignee"
+	if state.sort_order == "recent" then cols = cols .. ",updated" end
 
-		-- Main query
-		local res = deps.jira.list_issues(jql, cols, status_filter)
-
-		-- Parse rows into a dict (key -> cols) for dedup
-		local rows = {}
+	-- Helper: parse tab-separated output into a keyed dict
+	local function parse_results(res, target)
 		for _, line in ipairs(vim.split(res, "\n")) do
 			local raw = vim.split(line, "\t")
 			local cols_arr = {}
@@ -51,35 +75,15 @@ function Tasks.fetch_all(state, deps)
 			end
 			if #cols_arr >= 4 then
 				cols_arr[2] = deps.display.normalize_status(cols_arr[2])
-				rows[cols_arr[1]] = cols_arr
-			end
-		end
-
-		-- Fetch favourites and merge (even when filtered out by status/assignee)
-		local favs = deps.favs.get_all(state.favs_persist)
-		local fav_keys = {}
-		for k in pairs(favs) do table.insert(fav_keys, k) end
-		if #fav_keys > 0 then
-			local or_clauses = {}
-			for _, k in ipairs(fav_keys) do
-				table.insert(or_clauses, 'key = "' .. k .. '"')
-			end
-			local fav_res = deps.jira.list_issues(table.concat(or_clauses, " OR "), cols, "")
-			for _, line in ipairs(vim.split(fav_res, "\n")) do
-				local raw = vim.split(line, "\t")
-				local cols_arr = {}
-				for _, v in ipairs(raw) do
-					if v ~= "" then table.insert(cols_arr, v) end
-				end
-				if #cols_arr >= 4 then
-					cols_arr[2] = deps.display.normalize_status(cols_arr[2])
-					if not rows[cols_arr[1]] then
-						rows[cols_arr[1]] = cols_arr
-					end
+				if not target[cols_arr[1]] then
+					target[cols_arr[1]] = cols_arr
 				end
 			end
 		end
+	end
 
+
+	local function render(rows, favs)
 		-- Build sorted list
 		local sorted = {}
 		for k in pairs(rows) do table.insert(sorted, k) end
@@ -99,8 +103,15 @@ function Tasks.fetch_all(state, deps)
 			end)
 		end
 
-		-- Load today's logged time
-		local today_logs = state.logs_persist:all()
+		-- Load today's logged time (keys are "YYYY-MM-DD:ISSUE-KEY")
+		local today_prefix = os.date("%Y-%m-%d") .. ":"
+		local today_logs = {}
+		for k, v in pairs(state.logs_persist:all()) do
+			if k:sub(1, #today_prefix) == today_prefix then
+				local issue_key = k:sub(#today_prefix + 1)
+				today_logs[issue_key] = v
+			end
+		end
 
 		-- Add time column
 		local all_cols = {}
@@ -120,12 +131,49 @@ function Tasks.fetch_all(state, deps)
 
 		state.task_list = text
 		deps.display.put_text(state.buf_tasks, text)
+		Tasks._save_cache(text)
 
 		-- Apply highlights to favourite rows
 		for line, _ in pairs(fav_lines) do
 			vim.api.nvim_buf_add_highlight(state.buf_tasks, state.fav_ns, "NeojiraFav", line, 0, -1)
 		end
-	end, 200)
+	end
+	-- Run main query async
+	deps.jira.list_issues_async(jql, cols, status_filter, function(res)
+		local rows = {}
+		parse_results(res, rows)
+
+		-- Fetch favourites and merge (even when filtered out by status/assignee)
+		local favs = deps.favs.get_all(state.favs_persist)
+		local fav_keys = {}
+		for k in pairs(favs) do table.insert(fav_keys, k) end
+
+		if #fav_keys > 0 then
+			local or_clauses = {}
+			for _, k in ipairs(fav_keys) do
+				table.insert(or_clauses, 'key = "' .. k .. '"')
+			end
+			deps.jira.list_issues_async(table.concat(or_clauses, " OR "), cols, "", function(fav_res)
+				parse_results(fav_res, rows)
+				render(rows, favs)
+			end)
+		else
+			render(rows, favs)
+		end
+	end)
+
+end
+
+--- Load cached task list for instant display, then refresh asynchronously.
+--- @param state table
+--- @param deps table
+function Tasks.fetch_cached(state, deps)
+	local cached = Tasks.load_cache()
+	if cached and cached ~= "" then
+		state.task_list = cached
+		deps.display.put_text(state.buf_tasks, cached)
+	end
+	Tasks.fetch_all(state, deps)
 end
 
 --- Register all keymaps for the task list buffer.
@@ -137,6 +185,7 @@ function Tasks.register_keymaps(state, deps)
 
 	deps.display.nmap("<cr>", function() Tasks.open_task(state, deps) end, buf)
 	deps.display.nmap("r", function() Tasks.fetch_all(state, deps) end, buf)
+	deps.display.nmap("<C-r>", function() Tasks.fetch_all(state, deps) end, buf)
 	deps.display.nmap("<bs>", function() Tasks.open_cached(state, deps) end, buf)
 	deps.display.nmap("<C-o>", function() Tasks.open_cached(state, deps) end, buf)
 	deps.display.nmap("<M-o>", function() Tasks.open_cached(state, deps) end, buf)
@@ -162,6 +211,7 @@ function Tasks.register_keymaps(state, deps)
 			Tasks.fetch_all(state, deps)
 		end)
 	end, buf)
+	deps.display.nmap("/", function() Tasks.search_issues(state, deps) end, buf)
 
 	-- Number keys for quick time logging (1-9 hours)
 	for i = 1, 9 do
@@ -286,4 +336,61 @@ function Tasks.time_log(state, deps)
 	end
 end
 
+
+--- Search all Jira issues via text query and show results in a scratch buffer.
+--- `<cr>` opens the issue, `F` favourites it, `q` closes.
+--- @param state table
+--- @param deps table
+function Tasks.search_issues(state, deps)
+	vim.ui.input({ prompt = "Search Jira: " }, function(query)
+		if not query or query == "" then return end
+
+		local res = deps.jira.search_issues(query)
+		local rows = {}
+		for _, line in ipairs(vim.split(res, "\n")) do
+			local raw = vim.split(line, "\t")
+			local cols_arr = {}
+			for _, v in ipairs(raw) do
+				if v ~= "" then table.insert(cols_arr, v) end
+			end
+			if #cols_arr >= 4 then
+				table.insert(rows, cols_arr)
+			end
+		end
+
+		if #rows == 0 then
+			vim.notify("No results for: " .. query, 1)
+			return
+		end
+
+		-- Show results in a scratch buffer
+		local buf = deps.display.new_scratch()
+		vim.bo[buf].filetype = "neojira-search"
+		local text, _ = deps.display.format_task_rows(rows, { sort_order = "status" })
+		deps.display.put_text(buf, text)
+
+		deps.display.nmap("<cr>", function()
+			local line = vim.api.nvim_get_current_line()
+			local key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
+			if key then
+				local res = deps.jira.view_issue(key, 10)
+				deps.display.put_text(buf, res)
+				deps.display.nmap("q", function()
+					vim.api.nvim_win_close(0, true)
+				end, buf)
+			end
+		end, buf)
+
+		deps.display.nmap("F", function()
+			deps.favs.toggle(state.favs_persist, function()
+				-- Re-query and refresh the search buffer
+				Tasks.search_issues(state, deps)
+			end)
+		end, buf)
+
+		deps.display.nmap("q", function()
+			vim.api.nvim_win_close(0, true)
+		end, buf)
+	end)
+end
 return Tasks

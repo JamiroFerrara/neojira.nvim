@@ -1,10 +1,50 @@
 --- TimeTracker — worklog time tracking in an interactive scratch buffer.
 local Time = {}
 
+--- Build the persist store key for a given date and issue key.
+--- @param date string — "YYYY-MM-DD"
+--- @param key string — e.g. "PROJ-123"
+--- @return string
+local function store_key(date, key)
+	return date .. ":" .. key
+end
+
+--- Extract (date, issue_key) from a store key.
+--- @param sk string — e.g. "2026-06-30:PROJ-123"
+--- @return string, string
+local function parse_store_key(sk)
+	return sk:match("(%d+%-%d+%-%d+):(.+)")
+end
+
+--- Get today's date string.
+--- @return string
+local function today()
+	return os.date("%Y-%m-%d")
+end
+
+--- Format a date string for display.
+--- @param date string
+--- @return string
+local function display_date(date)
+	if date == today() then return date .. " (today)" end
+	local yesterday = os.date("%Y-%m-%d", os.time() - 86400)
+	if date == yesterday then return date .. " (yesterday)" end
+	return date
+end
+
+--- Shift a date by N days.
+--- @param date string — "YYYY-MM-DD"
+--- @param delta integer
+--- @return string
+local function shift_date(date, delta)
+	local t = os.time({ year = tonumber(date:sub(1,4)), month = tonumber(date:sub(6,2)), day = tonumber(date:sub(9,10)) })
+	return os.date("%Y-%m-%d", t + delta * 86400)
+end
+
 --- Open the time-log UI for an issue.
 ---
---- Renders today's logged time, preset durations, and provides keymaps for
---- logging, deleting entries, and resetting the day.
+--- Renders the selected day's logged time, preset durations, and provides keymaps for
+--- logging, deleting entries, and resetting the day. H/L navigate between days.
 --- @param key string — issue key
 --- @param jira table — JiraDataSource instance
 --- @param persist table — Persist store for "logs"
@@ -19,8 +59,25 @@ function Time.show(key, jira, persist, display)
 	local time_buf = display.new_scratch()
 	vim.bo[time_buf].filetype = "neojira-time"
 
+	local current_date = today()
+
+	local function logs_for_date(date)
+		local prefix = date .. ":"
+		local all = persist:all()
+		local result = {}
+		for k, v in pairs(all) do
+			if k:sub(1, #prefix) == prefix then
+				local _, issue = parse_store_key(k)
+				if issue then
+					result[issue] = v
+				end
+			end
+		end
+		return result
+	end
+
 	local function render()
-		local logs = persist:all()
+		local logs = logs_for_date(current_date)
 		local total = 0
 		for _, sec in pairs(logs) do
 			total = total + sec
@@ -29,7 +86,7 @@ function Time.show(key, jira, persist, display)
 		local lines = {
 			"Log time for: " .. key,
 			"",
-			"Today's total: " .. display.format_seconds(total),
+			display_date(current_date) .. " — total: " .. display.format_seconds(total),
 			"",
 		}
 
@@ -54,7 +111,7 @@ function Time.show(key, jira, persist, display)
 			table.insert(lines, "  " .. label)
 		end
 		table.insert(lines, "")
-		table.insert(lines, "Press q to close")
+		table.insert(lines, "H/L: change day  R: reset day  d: delete entry  q: close")
 		display.put_text(time_buf, table.concat(lines, "\n"))
 	end
 
@@ -66,10 +123,11 @@ function Time.show(key, jira, persist, display)
 	local function do_log(time_str, comment)
 		jira.add_worklog(key, time_str, comment)
 
-		local logs = persist:all()
-		logs[key] = (logs[key] or 0) + display.seconds_from_str(time_str)
-		persist:set(key, logs[key])
-		vim.notify("Logged " .. time_str .. " on " .. key, 1)
+		local sk = store_key(current_date, key)
+		local all = persist:all()
+		all[sk] = (all[sk] or 0) + display.seconds_from_str(time_str)
+		persist:set(sk, all[sk])
+		vim.notify("Logged " .. time_str .. " on " .. key .. " (" .. current_date .. ")", 1)
 
 		-- Close comment window
 		if comment_buf and vim.api.nvim_buf_is_valid(comment_buf) then
@@ -134,43 +192,58 @@ function Time.show(key, jira, persist, display)
 		local entry_key = line:match("^%s+([A-Z][A-Z0-9]+%-%d+)")
 		if not entry_key then return end
 
-		-- Remote delete via REST API
-		local wl = jira.rest_get_worklogs(entry_key)
-		if wl and wl.worklogs then
-			local today = os.date("%Y-%m-%d")
-			for _, entry in ipairs(wl.worklogs) do
-				local started = (entry.started or ""):sub(1, 10)
-				if started == today and entry.id then
-					jira.rest_delete_worklog(entry_key, entry.id)
+		-- Remote delete via REST API (only for today's entries)
+		if current_date == today() then
+			local wl = jira.rest_get_worklogs(entry_key)
+			if wl and wl.worklogs then
+				for _, entry in ipairs(wl.worklogs) do
+					local started = (entry.started or ""):sub(1, 10)
+					if started == current_date and entry.id then
+						jira.rest_delete_worklog(entry_key, entry.id)
+					end
 				end
 			end
 		end
 
-		-- Local removal
-		persist:delete(entry_key)
+		-- Local removal for the current date
+		persist:delete(store_key(current_date, entry_key))
 		render()
 	end
 
-	local function reset_today()
-		vim.ui.input({ prompt = "Delete all today's worklogs from server too? (y/N): " }, function(answer)
-			if answer ~= "y" and answer ~= "Y" then return end
-
-			-- Clear local store
-			local logs = persist:all()
-			for k in pairs(logs) do
-				persist:delete(k)
+	local function reset_day()
+		vim.ui.input({ prompt = "Delete all " .. current_date .. " worklogs from server too? (y/N): " }, function(answer)
+			if answer ~= "y" and answer ~= "Y" then
+				-- Just clear local entries for this date
+				local prefix = current_date .. ":"
+				local all = persist:all()
+				for k in pairs(all) do
+					if k:sub(1, #prefix) == prefix then
+						persist:delete(k)
+					end
+				end
+				vim.notify(current_date .. " time reset locally", 1)
+				render()
+				return
 			end
 
-			-- Delete all today's worklogs from server
-			local data = jira.rest_search("worklogDate >= startOfDay()")
+			-- Clear local entries for this date
+			local prefix = current_date .. ":"
+			local all = persist:all()
+			for k in pairs(all) do
+				if k:sub(1, #prefix) == prefix then
+					persist:delete(k)
+				end
+			end
+
+			-- Delete from server for this date
+			local data = jira.rest_search("worklogDate = \"" .. current_date .. "\"")
 			if data and data.issues then
 				for _, issue in ipairs(data.issues) do
 					local wl = jira.rest_get_worklogs(issue.key)
 					if wl and wl.worklogs then
-						local today = os.date("%Y-%m-%d")
 						for _, entry in ipairs(wl.worklogs) do
 							local started = (entry.started or ""):sub(1, 10)
-							if started == today and entry.id then
+							if started == current_date and entry.id then
 								jira.rest_delete_worklog(issue.key, entry.id)
 							end
 						end
@@ -178,15 +251,23 @@ function Time.show(key, jira, persist, display)
 				end
 			end
 
-			vim.notify("Today's time reset", 1)
+			vim.notify(current_date .. " time reset", 1)
 			render()
 		end)
 	end
 
-	display.nmap("R", reset_today, time_buf)
+	display.nmap("R", reset_day, time_buf)
 	display.nmap("d", delete_entry, time_buf)
 	display.nmap("q", function()
 		vim.api.nvim_win_close(0, true)
+	end, time_buf)
+	display.nmap("H", function()
+		current_date = shift_date(current_date, -1)
+		render()
+	end, time_buf)
+	display.nmap("L", function()
+		current_date = shift_date(current_date, 1)
+		render()
 	end, time_buf)
 end
 
@@ -205,9 +286,11 @@ function Time.quick_log(key, hours, jira, persist, on_log)
 	local time_str = hours .. "h"
 	jira.quick_add_worklog(key, time_str)
 
-	local logs = persist:all()
-	logs[key] = (logs[key] or 0) + hours * 3600
-	persist:set(key, logs[key])
+	local date = today()
+	local sk = store_key(date, key)
+	local all = persist:all()
+	all[sk] = (all[sk] or 0) + hours * 3600
+	persist:set(sk, all[sk])
 
 	vim.notify("Logged " .. time_str .. " on " .. key, 1)
 	if on_log then on_log() end

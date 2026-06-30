@@ -76,7 +76,7 @@ function M.run(deps_override)
 	state.task_list = ""
 	state.buf_tasks = Display.new_scratch()
 
-	Tasks.fetch_all(state, deps)
+	Tasks.fetch_cached(state, deps)
 	Tasks.register_keymaps(state, deps)
 end
 
