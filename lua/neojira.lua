@@ -386,6 +386,11 @@ M.get_all_tasks = function()
 		save_favs(favs)
 		M.get_all_tasks()
 	end, M.buf_tasks)
+	-- Number keys for quick time logging (1-9 hours)
+	for i = 1, 9 do
+		U.nmap(tostring(i), function() M.quick_log_time(i) end, M.buf_tasks)
+	end
+
 end
 M.issue_time_log = function()
 
@@ -400,6 +405,7 @@ M.issue_time_log = function()
 	U.split(true)
 	local time_buf = U.new_scratch()
 	vim.bo[time_buf].filetype = "neojira-time"
+
 	local key = M.selected_key
 
 	local function render()
@@ -579,6 +585,26 @@ M.issue_time_log = function()
 	U.nmap("R", reset_today, time_buf)
 	U.nmap("d", delete_entry, time_buf)
 	U.nmap("q", function() vim.api.nvim_win_close(0, true) end, time_buf)
+end
+
+M.quick_log_time = function(hours)
+	local line = vim.api.nvim_get_current_line()
+	local key = line:match("([A-Z][A-Z0-9]+%-(%d+))")
+	if not key then
+		vim.notify("No valid task key found in the line. 💔", 1)
+		return
+	end
+
+	local time_str = hours .. "h"
+	local cmd = 'jira issue worklog add ' .. key .. ' "' .. time_str .. '" --no-input'
+	vim.fn.system(cmd)
+
+	local logs = load_logs()
+	logs[key] = (logs[key] or 0) + hours * 3600
+	save_logs(logs)
+
+	vim.notify("Logged " .. time_str .. " on " .. key, 1)
+	M.get_all_tasks()
 end
 
 M.open_cached_list = function()
