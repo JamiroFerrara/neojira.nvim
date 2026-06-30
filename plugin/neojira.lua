@@ -1,1 +1,3 @@
--- vim.api.nvim_create_user_command("Neojira", require("neojira").run, {})
+-- neojira.nvim — Jira integration for Neovim.
+-- The `Neojira` user command is created by setup().
+-- This file ensures the plugin directory is on Neovim's runtimepath.
